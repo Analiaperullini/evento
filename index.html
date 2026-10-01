@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#5b2bd6" />
+    <meta name="robots" content="noindex" />
+    <title>Portal del Evento</title>
+    <!--
+      Página fija a la que apunta el QR de las pulseras (GitHub Pages).
+      Lee destino.json (que actualiza el servidor al arrancar) y redirige al
+      portal. Así el QR impreso nunca cambia aunque cambie la dirección del túnel.
+    -->
+    <style>
+      :root { --bg: #5b2bd6; --fg: #fff; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: linear-gradient(135deg, #5b2bd6 0%, #8a3ffc 55%, #ff6f3c 100%); color: var(--fg);
+        text-align: center;
+      }
+      .box { max-width: 360px; }
+      .spinner {
+        width: 44px; height: 44px; margin: 0 auto 20px; border-radius: 50%;
+        border: 4px solid rgba(255,255,255,.3); border-top-color: #fff; animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      h1 { font-size: 22px; margin: 0 0 8px; }
+      p { margin: 0 0 16px; opacity: .9; line-height: 1.4; }
+      button {
+        font: inherit; font-weight: 600; padding: 12px 22px; border: 0; border-radius: 10px;
+        background: #fff; color: #5b2bd6; cursor: pointer;
+      }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <div id="cargando">
+        <div class="spinner"></div>
+        <h1>Abriendo el portal del evento…</h1>
+      </div>
+      <div id="offline" hidden>
+        <h1>El portal no está disponible en este momento</h1>
+        <p>Probá de nuevo en unos minutos. Esta página se vuelve a intentar sola.</p>
+        <button type="button" onclick="intentar()">Reintentar</button>
+      </div>
+    </div>
+    <script>
+      // ?p=/galeria permite apuntar a una sección específica del portal
+      var destinoRuta = new URLSearchParams(location.search).get("p") || "/";
+      if (destinoRuta.charAt(0) !== "/") destinoRuta = "/";
+      var reintento = null;
+
+      function mostrar(estado) {
+        document.getElementById("cargando").hidden = estado !== "cargando";
+        document.getElementById("offline").hidden = estado !== "offline";
+      }
+
+      function conTimeout(url, ms) {
+        var ctrl = new AbortController();
+        var t = setTimeout(function () { ctrl.abort(); }, ms);
+        return fetch(url, { cache: "no-store", signal: ctrl.signal }).finally(function () { clearTimeout(t); });
+      }
+
+      function intentar() {
+        clearTimeout(reintento);
+        mostrar("cargando");
+        conTimeout("destino.json?t=" + Date.now(), 8000)
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            var base = (d && d.url ? String(d.url) : "").replace(/\/+$/, "");
+            if (!/^https:\/\//.test(base)) throw new Error("sin destino");
+            // Se verifica que el servidor responda antes de redirigir
+            return conTimeout(base + "/api/health", 8000).then(function (r) {
+              if (!r.ok) throw new Error("servidor caído");
+              location.replace(base + destinoRuta);
+            });
+          })
+          .catch(function () {
+            mostrar("offline");
+            reintento = setTimeout(intentar, 15000);
+          });
+      }
+
+      intentar();
+    </script>
+  </body>
+</html>
